@@ -897,7 +897,7 @@
     genreSel.innerHTML = '<option value="all">All Genres</option>' +
       uniqueValues('genres').map(g=>`<option value="${escapeAttr(g)}">${escapeHtml(g)}</option>`).join('');
     tagSel.innerHTML = '<option value="all">All Tags</option>' +
-      uniqueValues('tags').map(t=>`<option value="${escapeAttr(t)}">${escapeHtml(t)}</option>`).join('');
+      uniqueValues('tags').map(t=>`<option value="${escapeAttr(t)}" style="color:hsl(${tagHue(t)} 70% 45%);">${escapeHtml(t)}</option>`).join('');
 
     if ([...genreSel.options].some(o=>o.value===curGenre)) genreSel.value = curGenre;
     if ([...tagSel.options].some(o=>o.value===curTag)) tagSel.value = curTag;
@@ -905,6 +905,20 @@
 
   function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function escapeAttr(s){ return escapeHtml(s); }
+
+  // Deterministic color per tag — same tag always gets the same hue, no setup needed.
+  function tagHue(tag){
+    let hash = 0;
+    for (let i = 0; i < tag.length; i++){
+      hash = tag.charCodeAt(i) + ((hash << 5) - hash);
+      hash = hash & hash;
+    }
+    return Math.abs(hash) % 360;
+  }
+  function tagChipHtml(tag){
+    const hue = tagHue(tag);
+    return `<span class="badge" style="border:1px solid hsl(${hue} 65% 62%); color:hsl(${hue} 70% 72%); background:hsl(${hue} 65% 62% / .16);">${escapeHtml(tag)}</span>`;
+  }
 
   function parseRuntimeToMinutes(raw){
     if (!raw) return null;
@@ -1081,7 +1095,7 @@
       ` : ''}
       <div class="kv">
         ${m.barcode ? `<div class="k">Barcode</div><div>${escapeHtml(m.barcode)}</div>`:''}
-        ${(m.tags&&m.tags.length) ? `<div class="k">Tags</div><div>${m.tags.map(escapeHtml).join(', ')}</div>`:''}
+        ${(m.tags&&m.tags.length) ? `<div class="k">Tags</div><div class="badgerow" style="gap:6px;">${m.tags.map(tagChipHtml).join('')}</div>`:''}
         <div class="k">Added</div><div>${m.dateAdded ? new Date(m.dateAdded).toLocaleDateString() : '—'}</div>
         ${m.watched ? `<div class="k">Watched</div><div>${m.lastWatched ? new Date(m.lastWatched).toLocaleDateString() : 'Yes'}</div>` : ''}
       </div>
