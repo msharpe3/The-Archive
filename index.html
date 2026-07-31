@@ -386,6 +386,7 @@
           <button class="btn btn-ghost" id="bulkBackfillBtn" style="width:100%; text-align:left;">🔗 Backfill Recommendations</button>
           <button class="btn btn-ghost" id="achievementsOpenBtn" style="width:100%; text-align:left;">🏆 Achievements</button>
           <button class="btn btn-ghost" id="themeOpenBtn" style="width:100%; text-align:left;">🎨 Theme</button>
+          <button class="btn btn-ghost" id="tagColorsOpenBtn" style="width:100%; text-align:left;">🏷️ Tag Colors</button>
           <button class="btn btn-ghost" id="exportBtn" style="width:100%; text-align:left;">⬇ Export Backup</button>
           <button class="btn btn-ghost" id="importBtn" style="width:100%; text-align:left;">⬆ Import Backup</button>
           <input type="file" id="importFileInput" accept="application/json" style="display:none;" />
@@ -646,6 +647,22 @@
   </div>
 </div>
 
+<!-- Tag Colors Modal -->
+<div class="overlay" id="tagColorsOverlay" style="display:none;">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-head">
+      <h2>Tag Colors</h2>
+      <button class="close-x" id="closeTagColors">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="scan-hint" style="text-align:left; padding-left:0;">
+        Every tag gets an automatic color. Pick your own for any tag below to override it — tap ↺ to go back to automatic.
+      </p>
+      <div id="tagColorsList"></div>
+    </div>
+  </div>
+</div>
+
 <!-- Theme Modal -->
 <div class="overlay" id="themeOverlay" style="display:none;">
   <div class="modal" style="max-width:380px;">
@@ -799,10 +816,12 @@
   // ---------------- Storage: local cache + Firestore cloud sync ----------------
   const LOCAL_KEY = 'shelf_collection_v1';
   const WISHLIST_LOCAL_KEY = 'shelf_wishlist_v1';
+  const TAGCOLORS_LOCAL_KEY = 'shelf_tagcolors_v1';
   const CODE_KEY = 'shelf_sync_code_v1';
   const CONFIG_KEY = 'shelf_firebase_config_v1';
 
   let wishlist = [];
+  let tagColors = {};
   let fbApp = null, fbDb = null, unsubscribe = null;
   let applyingRemoteUpdate = false;
 
@@ -826,6 +845,13 @@
   }
   function saveWishlistLocal(){
     try{ localStorage.setItem(WISHLIST_LOCAL_KEY, JSON.stringify(wishlist)); }catch(e){}
+  }
+  function loadTagColorsLocal(){
+    try{ const raw = localStorage.getItem(TAGCOLORS_LOCAL_KEY); return raw ? JSON.parse(raw) : {}; }
+    catch(e){ return {}; }
+  }
+  function saveTagColorsLocal(){
+    try{ localStorage.setItem(TAGCOLORS_LOCAL_KEY, JSON.stringify(tagColors)); }catch(e){}
   }
 
   function initFirebase(){
@@ -851,7 +877,8 @@
         applyingRemoteUpdate = true;
         collection = Array.isArray(data.movies) ? data.movies : [];
         wishlist = Array.isArray(data.wishlist) ? data.wishlist : [];
-        saveLocal(); saveWishlistLocal(); render();
+        tagColors = (data.tagColors && typeof data.tagColors === 'object') ? data.tagColors : {};
+        saveLocal(); saveWishlistLocal(); saveTagColorsLocal(); render();
         applyingRemoteUpdate = false;
       },
       ()=>{ setSyncStatus('Cloud connection lost — showing the local copy on this device.', true); }
@@ -862,7 +889,7 @@
     const code = getSyncCode();
     if (!fbDb || !code) return;
     try{
-      await fbDb.collection('households').doc(code).set({ movies: collection, wishlist: wishlist, updatedAt: Date.now() });
+      await fbDb.collection('households').doc(code).set({ movies: collection, wishlist: wishlist, tagColors: tagColors, updatedAt: Date.now() });
     }catch(e){
       toast('Saved on this device — cloud sync failed to push.');
     }
@@ -871,6 +898,7 @@
   async function loadCollection(){
     collection = loadLocal();
     wishlist = loadWishlistLocal();
+    tagColors = loadTagColorsLocal();
     if (initFirebase()){
       attachRealtimeSync();
     }
@@ -879,6 +907,7 @@
   async function saveCollection(){
     saveLocal();
     saveWishlistLocal();
+    saveTagColorsLocal();
     if (!applyingRemoteUpdate) await pushToCloud();
   }
 
@@ -897,7 +926,7 @@
     genreSel.innerHTML = '<option value="all">All Genres</option>' +
       uniqueValues('genres').map(g=>`<option value="${escapeAttr(g)}">${escapeHtml(g)}</option>`).join('');
     tagSel.innerHTML = '<option value="all">All Tags</option>' +
-      uniqueValues('tags').map(t=>`<option value="${escapeAttr(t)}" style="color:hsl(${tagHue(t)} 70% 45%);">${escapeHtml(t)}</option>`).join('');
+      uniqueValues('tags').map(t=>`<option value="${escapeAttr(t)}" style="color:${darkenHex(getTagColor(t), .35)};">${escapeHtml(t)}</option>`).join('');
 
     if ([...genreSel.options].some(o=>o.value===curGenre)) genreSel.value = curGenre;
     if ([...tagSel.options].some(o=>o.value===curTag)) tagSel.value = curTag;
@@ -906,7 +935,8 @@
   function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function escapeAttr(s){ return escapeHtml(s); }
 
-  // Deterministic color per tag — same tag always gets the same hue, no setup needed.
+  // Deterministic color per tag — same tag always gets the same hue, no setup needed,
+  // unless the user has picked a custom color for it (stored in tagColors).
   function tagHue(tag){
     let hash = 0;
     for (let i = 0; i < tag.length; i++){
@@ -915,9 +945,24 @@
     }
     return Math.abs(hash) % 360;
   }
+  function hslToHex(h, s, l){
+    s /= 100; l /= 100;
+    const k = n => (n + h / 30) % 12;
+    const a = s * Math.min(l, 1 - l);
+    const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    const toHex = x => Math.round(255 * x).toString(16).padStart(2, '0');
+    return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
+  }
+  function autoTagColor(tag){ return hslToHex(tagHue(tag), 65, 62); }
+  function getTagColor(tag){ return tagColors[tag] || autoTagColor(tag); }
+  function hexToRgba(hex, alpha){
+    hex = (hex || '#ffd400').replace('#', '');
+    const r = parseInt(hex.substring(0,2), 16), g = parseInt(hex.substring(2,4), 16), b = parseInt(hex.substring(4,6), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
   function tagChipHtml(tag){
-    const hue = tagHue(tag);
-    return `<span class="badge" style="border:1px solid hsl(${hue} 65% 62%); color:hsl(${hue} 70% 72%); background:hsl(${hue} 65% 62% / .16);">${escapeHtml(tag)}</span>`;
+    const c = getTagColor(tag);
+    return `<span class="badge" style="border:1px solid ${c}; color:${c}; background:${hexToRgba(c, .16)};">${escapeHtml(tag)}</span>`;
   }
 
   function parseRuntimeToMinutes(raw){
@@ -1504,6 +1549,45 @@
     applyTheme();
     toast('Theme reset to default.');
   });
+
+  // ---------------- Tag Colors ----------------
+  function renderTagColorsList(){
+    const allTags = uniqueValues('tags');
+    if (!allTags.length){
+      $('tagColorsList').innerHTML = `<p style="text-align:center; color:var(--muted); font-size:13px; padding:16px 0;">No tags yet — add some to your titles first.</p>`;
+      return;
+    }
+    $('tagColorsList').innerHTML = allTags.map(t => `
+      <div style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line);">
+        <input type="color" class="tag-color-input" data-tag="${escapeAttr(t)}" value="${getTagColor(t)}" style="width:38px; height:32px; border:1px solid var(--line); background:none; cursor:pointer; padding:1px; border-radius:5px; flex-shrink:0;" />
+        <span style="flex:1; font-size:13px; color:var(--ink);">${escapeHtml(t)}</span>
+        ${tagColors[t] ? `<button type="button" class="tag-color-reset" data-tag="${escapeAttr(t)}" style="background:none; border:1px solid var(--line); color:var(--muted); border-radius:4px; padding:5px 8px; cursor:pointer; font-size:12px;">↺</button>` : ''}
+      </div>`).join('');
+
+    document.querySelectorAll('.tag-color-input').forEach(input=>{
+      input.addEventListener('input', ()=>{
+        tagColors[input.dataset.tag] = input.value;
+        saveCollection();
+        render();
+      });
+      input.addEventListener('change', ()=> renderTagColorsList());
+    });
+    document.querySelectorAll('.tag-color-reset').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        delete tagColors[btn.dataset.tag];
+        saveCollection();
+        render();
+        renderTagColorsList();
+      });
+    });
+  }
+  $('tagColorsOpenBtn').addEventListener('click', ()=>{
+    $('settingsMenu').style.display = 'none';
+    renderTagColorsList();
+    $('tagColorsOverlay').style.display = 'flex';
+  });
+  $('closeTagColors').addEventListener('click', ()=> $('tagColorsOverlay').style.display = 'none');
+  $('tagColorsOverlay').addEventListener('click', e=>{ if (e.target.id==='tagColorsOverlay') $('tagColorsOverlay').style.display='none'; });
 
   // ---------------- Bulk trailer fetch ----------------
   async function runBulkTrailerFetch(){
