@@ -310,6 +310,21 @@
   .stat-big .num{ font-family:'Anton', sans-serif; font-size:32px; color:var(--amber); line-height:1; }
   .stat-big .lbl{ font-family:'IBM Plex Mono', monospace; font-size:9.5px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-top:4px; }
 
+  .mn-countdown{
+    font-family:'Anton', sans-serif; font-size:min(30vw,160px); color:var(--amber);
+    animation: mnPulse .8s ease; text-shadow:0 0 40px rgba(255,212,0,.4);
+  }
+  @keyframes mnPulse{
+    0%{ transform:scale(.5); opacity:0; }
+    50%{ transform:scale(1.15); opacity:1; }
+    100%{ transform:scale(1); opacity:1; }
+  }
+  .mn-reveal{ animation: mnFadeUp .6s ease; }
+  @keyframes mnFadeUp{
+    0%{ opacity:0; transform:translateY(16px); }
+    100%{ opacity:1; transform:translateY(0); }
+  }
+
   .achv-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(130px,1fr)); gap:12px; }
   .achv-card{
     text-align:center; padding:14px 8px; border-radius:8px; border:1px solid var(--line);
@@ -756,6 +771,12 @@
   </div>
 </div>
 
+<!-- Movie Night Mode -->
+<div id="movieNightOverlay" style="display:none; position:fixed; inset:0; z-index:80; background:#000;">
+  <button id="closeMovieNight" style="position:fixed; top:16px; right:16px; z-index:2; font-size:20px; background:rgba(0,0,0,.45); color:#fff; border:1px solid rgba(255,255,255,.3); border-radius:50%; width:38px; height:38px; cursor:pointer;">✕</button>
+  <div id="movieNightContent" style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden;"></div>
+</div>
+
 <!-- Confirm Dialog (replaces native confirm(), which iOS silently blocks in standalone/home-screen mode) -->
 <div class="overlay" id="confirmOverlay" style="display:none;">
   <div class="modal" style="max-width:360px;">
@@ -1173,6 +1194,7 @@
         <div class="divider">you might also like</div>
         <div id="recsContainer"><div class="status-line"><span class="spinner"></span> Finding similar titles…</div></div>
       ` : ''}
+      <button class="btn btn-primary" id="movieNightBtn" style="width:100%; margin:14px 0;">🎬 Start Movie Night</button>
       <div class="modal-actions">
         ${pickBadge ? `<button class="btn btn-primary" id="pickAgainBtn" style="flex:1;">🎲 Pick Again</button>` : ''}
         <button class="btn btn-ghost" id="editBtn" style="flex:1;">Edit</button>
@@ -1184,6 +1206,7 @@
     });
     if (pickBadge) $('pickAgainBtn').onclick = ()=> pickRandomMovie();
     $('editBtn').onclick = ()=>{ closeDetail(); openEdit(m.id); };
+    $('movieNightBtn').onclick = ()=>{ closeDetail(); openMovieNight(m); };
     if (trailerId){
       $('trailerToggleBtn').onclick = ()=>{
         const c = $('trailerContainer');
@@ -1277,6 +1300,42 @@
   }
   function closeDetail(){ $('detailOverlay').style.display = 'none'; }
 
+  // ---------------- Movie Night Mode ----------------
+  function openMovieNight(m){
+    $('movieNightOverlay').style.display = 'block';
+    const content = $('movieNightContent');
+    let count = 3;
+    content.innerHTML = `<div class="mn-countdown">${count}</div>`;
+    const timer = setInterval(()=>{
+      count--;
+      if (count > 0){
+        content.innerHTML = `<div class="mn-countdown">${count}</div>`;
+      } else {
+        clearInterval(timer);
+        renderMovieNightReveal(m);
+      }
+    }, 750);
+  }
+  function renderMovieNightReveal(m){
+    const content = $('movieNightContent');
+    const posterBg = m.posterUrl ? `background-image:url('${escapeAttr(m.posterUrl)}');` : '';
+    content.innerHTML = `
+      <div style="position:absolute; inset:0; ${posterBg} background-size:cover; background-position:center; filter:blur(35px) brightness(.35); transform:scale(1.15);"></div>
+      <div class="mn-reveal" style="position:relative; z-index:1; text-align:center; padding:24px; max-width:480px;">
+        ${m.posterUrl
+          ? `<img src="${escapeAttr(m.posterUrl)}" style="width:190px; border-radius:8px; box-shadow:0 24px 60px rgba(0,0,0,.7); margin-bottom:22px;" onerror="this.style.display='none'" />`
+          : ''}
+        <div style="font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:3px; color:var(--amber); text-transform:uppercase; margin-bottom:10px;">🎟️ Now Showing</div>
+        <h1 style="font-family:'Anton', sans-serif; font-size:clamp(28px,6vw,42px); color:#fff; margin:0 0 10px; letter-spacing:.5px;">${escapeHtml(m.title)}</h1>
+        <div style="font-family:'IBM Plex Mono', monospace; font-size:12px; color:#cfd3e6; margin-bottom:18px;">
+          ${escapeHtml(m.year||'')}${m.runtime? ' · '+escapeHtml(formatRuntime(m.runtime)):''}${m.format? ' · '+escapeHtml(m.format):''}
+        </div>
+        ${m.plot ? `<p style="color:#dcdfef; font-size:13.5px; line-height:1.65; margin:0;">${escapeHtml(m.plot)}</p>` : ''}
+      </div>
+    `;
+  }
+  $('closeMovieNight').addEventListener('click', ()=>{ $('movieNightOverlay').style.display = 'none'; });
+
   function pickRandomMovie(){
     const pool = getFiltered();
     if (!pool.length){
@@ -1297,7 +1356,8 @@
       ticks++;
       if (ticks >= maxTicks){
         clearInterval(shuffle);
-        openDetail(finalChoice.id, true);
+        $('detailOverlay').style.display = 'none';
+        openMovieNight(finalChoice);
       }
     }, 90);
   }
