@@ -1303,18 +1303,7 @@
   // ---------------- Movie Night Mode ----------------
   function openMovieNight(m){
     $('movieNightOverlay').style.display = 'block';
-    const content = $('movieNightContent');
-    let count = 3;
-    content.innerHTML = `<div class="mn-countdown">${count}</div>`;
-    const timer = setInterval(()=>{
-      count--;
-      if (count > 0){
-        content.innerHTML = `<div class="mn-countdown">${count}</div>`;
-      } else {
-        clearInterval(timer);
-        renderMovieNightReveal(m);
-      }
-    }, 750);
+    renderMovieNightReveal(m);
   }
   function renderMovieNightReveal(m){
     const content = $('movieNightContent');
