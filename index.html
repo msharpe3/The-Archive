@@ -975,7 +975,25 @@
     return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
   }
   function autoTagColor(tag){ return hslToHex(tagHue(tag), 65, 62); }
-  function getTagColor(tag){ return tagColors[tag] || autoTagColor(tag); }
+
+  // Curated defaults for common tags — hand-picked to actually relate to the tag
+  // (decade tones, real team colors, mood-appropriate hues) rather than random hash colors.
+  // A user's own override in tagColors always wins over these.
+  const DEFAULT_TAG_COLORS = {
+    '1940s': '#8B6F47', '1960s': '#E8871E', '1970s': '#C1502E', '1980s': '#FF2E88',
+    '1990s': '#5B7C99', '2000s': '#4A90D9',
+    'action packed': '#E63946', 'baseball': '#B03A2E', 'boxing': '#B22222',
+    'cartoons': '#FFC914', 'christmas': '#C0392B', 'college': '#4B2E83',
+    'cowboys': '#A0522D', 'cult classic': '#7B2CBF', 'date night': '#E91E63',
+    'edge of your seat': '#9A031E', 'escapist': '#5C6BC0', 'fall': '#D2691E',
+    'family night': '#F3722C', 'feel good': '#F9C74F', 'football': '#2E7D32',
+    'halloween': '#FF7518', 'heavy hitter': '#6B0F1A', 'mafia': '#3B0918',
+    'nostalgia': '#C08497', 'short': '#78909C', 'summer': '#00BCD4',
+    'tv': '#42A5F5', 'time travel': '#00E5FF', 'yankees': '#132448',
+  };
+  function getTagColor(tag){
+    return tagColors[tag] || DEFAULT_TAG_COLORS[(tag||'').toLowerCase()] || autoTagColor(tag);
+  }
   function hexToRgba(hex, alpha){
     hex = (hex || '#ffd400').replace('#', '');
     const r = parseInt(hex.substring(0,2), 16), g = parseInt(hex.substring(2,4), 16), b = parseInt(hex.substring(4,6), 16);
@@ -1609,6 +1627,7 @@
     $('tagColorsList').innerHTML = allTags.map(t => `
       <div style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line);">
         <input type="color" class="tag-color-input" data-tag="${escapeAttr(t)}" value="${getTagColor(t)}" style="width:38px; height:32px; border:1px solid var(--line); background:none; cursor:pointer; padding:1px; border-radius:5px; flex-shrink:0;" />
+        <input type="text" class="tag-color-hex" data-tag="${escapeAttr(t)}" value="${getTagColor(t)}" placeholder="#rrggbb" maxlength="7" style="width:78px; flex-shrink:0; background:#0a1f4d; border:1px solid var(--line); color:var(--ink); border-radius:4px; padding:6px 8px; font-family:'IBM Plex Mono', monospace; font-size:11.5px;" />
         <span style="flex:1; font-size:13px; color:var(--ink);">${escapeHtml(t)}</span>
         ${tagColors[t] ? `<button type="button" class="tag-color-reset" data-tag="${escapeAttr(t)}" style="background:none; border:1px solid var(--line); color:var(--muted); border-radius:4px; padding:5px 8px; cursor:pointer; font-size:12px;">↺</button>` : ''}
       </div>`).join('');
@@ -1616,10 +1635,25 @@
     document.querySelectorAll('.tag-color-input').forEach(input=>{
       input.addEventListener('input', ()=>{
         tagColors[input.dataset.tag] = input.value;
+        const hexField = document.querySelector(`.tag-color-hex[data-tag="${CSS.escape(input.dataset.tag)}"]`);
+        if (hexField) hexField.value = input.value;
         saveCollection();
         render();
       });
       input.addEventListener('change', ()=> renderTagColorsList());
+    });
+    document.querySelectorAll('.tag-color-hex').forEach(hexField=>{
+      hexField.addEventListener('input', ()=>{
+        const val = hexField.value.trim();
+        if (/^#[0-9a-fA-F]{6}$/.test(val)){
+          tagColors[hexField.dataset.tag] = val;
+          const colorInput = document.querySelector(`.tag-color-input[data-tag="${CSS.escape(hexField.dataset.tag)}"]`);
+          if (colorInput) colorInput.value = val;
+          saveCollection();
+          render();
+        }
+      });
+      hexField.addEventListener('blur', ()=> renderTagColorsList());
     });
     document.querySelectorAll('.tag-color-reset').forEach(btn=>{
       btn.addEventListener('click', ()=>{
